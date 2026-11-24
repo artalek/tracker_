@@ -1,0 +1,101 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Обзор валют</h1>
+    <p>Конвертируйте валюты и отслеживайте, как менялся курс.</p>
+  </div>
+  <div class="source-tag"><span aria-hidden="true"></span>Справочные курсы Frankfurter</div>
+</section>
+<div class="workspace">
+  <section class="panel converter" aria-labelledby="convert-title">
+    <div class="panel-head">
+      <span class="panel-icon" aria-hidden="true">⇄</span>
+      <div><h2 id="convert-title">Конвертер</h2><p>Расчёт по последнему доступному курсу</p></div>
+    </div>
+    <form method="post" class="convert-form" data-converter>
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="field">{{ form.amount.label_tag }}{{ form.amount }}{{ form.amount.errors }}</div>
+      <div class="pair-control">
+        <div class="field">{{ form.base.label_tag }}{{ form.base }}{{ form.base.errors }}</div>
+        <button type="button" class="swap" aria-label="Поменять валюты местами" data-swap hidden>⇄</button>
+        <div class="field">{{ form.target.label_tag }}{{ form.target }}{{ form.target.errors }}</div>
+      </div>
+      <button class="button primary wide">Конвертировать <span aria-hidden="true">→</span></button>
+    </form>
+    <div class="conversion-output" aria-live="polite">
+      <span class="muted">Результат</span>
+      {% if result %}
+        <strong>{{ result.result|floatformat:"-6" }} <small>{{ result.target }}</small></strong>
+        {% if result.base == result.target %}
+          <p>Курс 1 для одинаковых валют</p>
+        {% else %}
+          <p>1 {{ result.base }} = {{ result.rate|floatformat:"-12" }} {{ result.target }}<br>
+          Курс за {{ result.date|date:"d.m.Y" }}{% if result.stale %} · сохранённый{% endif %}</p>
+        {% endif %}
+      {% else %}
+        <strong class="empty-value">—</strong>
+        <p>Введите сумму и выберите валюты.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel chart-panel" aria-labelledby="chart-title">
+    <div class="panel-head">
+      <span class="panel-icon" aria-hidden="true">↗</span>
+      <div><h2 id="chart-title">Динамика курса</h2><p>{% if chart %}{{ chart.base.code }} / {{ chart.target.code }} · История курса{% else %}Выберите валютную пару и период{% endif %}</p></div>
+    </div>
+    <form method="get" class="chart-form">
+      {{ chart_form.non_field_errors }}
+      <div class="field">{{ chart_form.base.label_tag }}{{ chart_form.base }}{{ chart_form.base.errors }}</div>
+      <div class="field">{{ chart_form.target.label_tag }}{{ chart_form.target }}{{ chart_form.target.errors }}</div>
+      <div class="field">{{ chart_form.days.label_tag }}{{ chart_form.days }}{{ chart_form.days.errors }}</div>
+      <button class="button outline">Показать</button>
+    </form>
+    {% if chart %}
+      {% url 'tracker:chart' as chart_url %}
+      <div class="chart-frame" data-chart="{{ chart_url }}?base={{ chart.base.code }}&amp;target={{ chart.target.code }}&amp;days={{ chart.days }}">
+        <p class="chart-state" data-chart-state>Загружаем историю…</p>
+        <img data-chart-image hidden alt="Динамика курса {{ chart.base.code }} к {{ chart.target.code }}">
+        <noscript>
+          <style>[data-chart-state]{display:none}</style>
+          <img src="{{ chart_url }}?base={{ chart.base.code }}&amp;target={{ chart.target.code }}&amp;days={{ chart.days }}" alt="Динамика курса {{ chart.base.code }} к {{ chart.target.code }}">
+          <a href="{{ chart_url }}?base={{ chart.base.code }}&amp;target={{ chart.target.code }}&amp;days={{ chart.days }}">Открыть график</a>
+        </noscript>
+      </div>
+      <div class="chart-footer">
+        <span class="muted" aria-live="polite" data-chart-note>Дневные значения курса</span>
+        {% if user.is_authenticated %}
+          <form method="post" action="{% url 'tracker:add_favorite' %}">
+            {% csrf_token %}
+            <input type="hidden" name="base" value="{{ chart.base.code }}">
+            <input type="hidden" name="target" value="{{ chart.target.code }}">
+            <button class="text-button">☆ В избранное</button>
+          </form>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="blank chart-frame">Чтобы построить график, задайте две разные валюты.</p>
+    {% endif %}
+  </section>
+</div>
+<section class="markets" aria-labelledby="markets-title">
+  <div class="section-heading"><div><h2 id="markets-title">Популярные курсы</h2><p>За 1 доллар США</p></div><a class="text-link" href="{% url 'tracker:rates' %}">Все курсы <span aria-hidden="true">↗</span></a></div>
+  <div class="market-grid">
+    {% for currency, snapshot in cards %}
+      <a class="market-card" href="{% url 'tracker:home' %}?base=USD&amp;target={{ currency.code }}#chart-title">
+        <span class="currency-icon" aria-hidden="true">{{ currency.symbol|default:currency.code }}</span>
+        <div class="market-name"><strong>USD / {{ currency.code }}</strong><span>{{ currency.name }}</span></div>
+        <div class="market-value">
+          {% if snapshot %}<strong>{{ snapshot.rate|floatformat:"-6" }}</strong>
+          <span>{{ snapshot.date|date:"d.m.Y" }}{% if snapshot.stale %} · сохранён{% endif %}</span>
+          {% else %}<strong>—</strong><span>Нет данных</span>{% endif %}
+        </div>
+      </a>
+    {% empty %}
+      <p class="blank">Валюты сейчас недоступны.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

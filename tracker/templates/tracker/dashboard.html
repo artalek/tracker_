@@ -1,0 +1,50 @@
+{% extends "tracker/base.html" %}
+{% block title %}Личный кабинет{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Личный кабинет</h1><p>{{ user.username }} · Избранные пары и история конвертаций</p></div><a class="button compact" href="{% url 'tracker:home' %}">К конвертеру ↗</a></div>
+<section class="panel account-panel" aria-labelledby="favorites-title">
+  <div class="section-heading"><h2 id="favorites-title">Избранные пары</h2><a class="text-link" href="{% url 'tracker:rates' %}">Выбрать пару ↗</a></div>
+  <ul class="favorites">
+    {% for pair in favorites %}
+      <li>
+        <div><strong>{{ pair.base_currency.code }} / {{ pair.target_currency.code }}</strong><br><small class="muted">{{ pair.base_currency.name }} → {{ pair.target_currency.name }}</small></div>
+        <div class="row-actions">
+          {% if pair.base_currency.is_active and pair.target_currency.is_active %}
+            <a class="text-link" href="{% url 'tracker:home' %}?base={{ pair.base_currency.code }}&amp;target={{ pair.target_currency.code }}#chart-title">График ↗</a>
+          {% else %}<span class="muted">Пара недоступна</span>{% endif %}
+          <form method="post" action="{% url 'tracker:remove_favorite' pair.pk %}">{% csrf_token %}<button class="button outline small">Удалить</button></form>
+        </div>
+      </li>
+    {% empty %}
+      <li class="blank">Сохраните пару со страницы курсов или из графика.</li>
+    {% endfor %}
+  </ul>
+</section>
+<section class="panel account-panel" aria-labelledby="history-title">
+  <div class="section-heading"><h2 id="history-title">История конвертаций</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Операция (UTC)</th><th scope="col">Сумма</th><th scope="col">Результат</th><th scope="col">Курс за дату</th></tr></thead>
+      <tbody>
+        {% for item in history %}
+          <tr>
+            <td>{{ item.created_at|date:"d.m.Y H:i" }}</td>
+            <td class="numeric">{{ item.amount|floatformat:"-6" }} {{ item.base_currency.code }}</td>
+            <td class="numeric">{{ item.result|floatformat:"-6" }} {{ item.target_currency.code }}</td>
+            <td class="numeric">{{ item.rate|floatformat:"-12" }} <small class="muted">· {{ item.rate_date|date:"d.m.Y" }}</small></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">Здесь появятся ваши конвертации после первого расчёта.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if history.has_other_pages %}
+    <nav class="pagination" aria-label="Страницы истории">
+      {% if history.has_previous %}<a class="text-link" href="?page={{ history.previous_page_number }}#history-title">← Назад</a>{% endif %}
+      <span class="muted">{{ history.number }} из {{ history.paginator.num_pages }}</span>
+      {% if history.has_next %}<a class="text-link" href="?page={{ history.next_page_number }}#history-title">Далее →</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>
+{% endblock %}

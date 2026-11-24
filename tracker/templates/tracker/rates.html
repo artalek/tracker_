@@ -1,0 +1,52 @@
+{% extends "tracker/base.html" %}
+{% block title %}Курсы валют{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Курсы валют</h1><p>Справочные значения за одну единицу базовой валюты.</p></div></div>
+<section class="panel">
+  <form method="get" class="rate-form">
+    <div class="field">
+      <label for="rate-base">Базовая валюта</label>
+      <select name="base" id="rate-base">
+        {% for currency in currencies %}<option value="{{ currency.code }}" {% if currency == base %}selected{% endif %}>{{ currency }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="button outline">Показать</button>
+  </form>
+  {% if invalid_base %}<p class="notice error">Выберите доступную базовую валюту.</p>{% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Валюта</th><th scope="col">Курс</th><th scope="col">Дата курса</th><th scope="col">Действия</th></tr></thead>
+      <tbody>
+        {% for currency, snapshot, favorited in rows %}
+          <tr>
+            <td><strong>{{ currency.code }}</strong> <span class="muted">{{ currency.name }}</span></td>
+            {% if snapshot %}
+              <td class="numeric">{{ snapshot.rate|floatformat:"-12" }}</td>
+              <td>{{ snapshot.date|date:"d.m.Y" }}{% if snapshot.stale %}<br><small class="muted">Сохранённый курс</small>{% endif %}</td>
+            {% else %}
+              <td class="muted">Недоступен</td><td>—</td>
+            {% endif %}
+            <td><div class="row-actions">
+              <a class="text-link" href="{% url 'tracker:home' %}?base={{ base.code }}&amp;target={{ currency.code }}#chart-title">График ↗</a>
+              {% if user.is_authenticated %}
+                {% if favorited %}<span class="muted">В избранном</span>
+                {% else %}
+                  <form method="post" action="{% url 'tracker:add_favorite' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="base" value="{{ base.code }}">
+                    <input type="hidden" name="target" value="{{ currency.code }}">
+                    <input type="hidden" name="source" value="rates">
+                    <button class="text-button" aria-label="Добавить {{ base.code }}/{{ currency.code }} в избранное">☆ В избранное</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </div></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">Нет валют для отображения.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

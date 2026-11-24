@@ -1,0 +1,92 @@
+# CurrencyTracker
+
+Учебный веб-сервис на Django для конвертации валют, просмотра справочных курсов и анализа их динамики. Гостю доступны конвертер, таблица курсов и графики. После регистрации можно сохранять валютные пары и просматривать свою историю расчётов.
+
+## Локальный запуск
+
+Понадобится Python 3.11–3.14. Из папки проекта выполните команды.
+
+**Windows PowerShell**
+
+```powershell
+python -m venv .venv
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+**macOS / Linux**
+
+```bash
+python3 -m venv .venv
+cp .env.example .env
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python manage.py migrate
+.venv/bin/python manage.py runserver
+```
+
+Откройте [http://127.0.0.1:8000](http://127.0.0.1:8000). Миграции создадут SQLite-базу и добавят справочник из 18 валют. При первом обращении к паре приложение загрузит курсы через интернет. Для предварительной загрузки запустите `manage.py update_rates`. Команда `manage.py createsuperuser` создаёт администратора для входа в [админку](http://127.0.0.1:8000/admin/).
+
+Далее в примерах `python` означает Python из виртуального окружения. Для его активации используйте `. .venv/bin/activate` на macOS/Linux или `.\.venv\Scripts\Activate.ps1` в PowerShell.
+
+## Архитектура и данные
+
+| Файл | Назначение |
+| --- | --- |
+| `currencytracker/settings.py` | Переменные окружения, SQLite / PostgreSQL, безопасность и статика |
+| `tracker/models.py` | Валюты, курсы, конвертации и избранное |
+| `tracker/forms.py` | Валидация суммы, активных валют и периодов графика |
+| `tracker/services.py` | Клиент Frankfurter, хранение и обновление курсов, расчёт через Decimal |
+| `tracker/views.py` | Конвертер, график, курсы, регистрация и кабинет |
+| `tracker/charts.py` | Серверный рендеринг PNG через Matplotlib и Agg |
+| `tracker/management/commands/update_rates.py` | Ручное или плановое обновление текущих курсов |
+| `tracker/tests.py` | Тесты Django с подменой HTTP-вызовов |
+
+`Currency` хранит код, название, символ и признак доступности. `ExchangeRate` связывает две валюты и хранит одну запись на направление и дату. `Conversion` связывает пользователя с расчётом и сохраняет сумму, результат, курс и дату курса, зафиксированные в момент конвертации. `Favorite` хранит уникальную направленную пару для конкретного пользователя. Для учётных записей используются модели, формы и сессии Django. Кабинет и удаление избранного проверяют владельца записи.
+
+Сумма должна быть положительной и содержать до шести знаков после запятой. В поле можно ввести `12,50` или `12.50`. Для одинаковых валют применяется коэффициент 1. Результат округляется до шести знаков по правилу ROUND_HALF_UP, а курс сохраняется с точностью до двенадцати знаков после запятой. При оценке точности крайних значений учитывайте, что SQLite хранит DecimalField с ограничениями числовой точности SQLite. Для серверного хранения точных десятичных значений используйте PostgreSQL.
+
+## Курсы и графики
+
+Используется [Frankfurter API v2](https://frankfurter.dev/). Ключ API не требуется. Текущие и исторические курсы приходят с одного маршрута.
+
+```text
+GET https://api.frankfurter.dev/v2/rates?base=USD&quotes=EUR,KZT
+GET https://api.frankfurter.dev/v2/rates?base=USD&quotes=EUR&from=2025-01-01&to=2025-01-31
+```
+
+Каждое наблюдение содержит `date`, `base`, `quote` и `rate`. Значения являются справочными и публикуются с учётной датой. Наличие данных зависит от пары и периода. График строится по опубликованным точкам за 7, 30, 90 или 365 календарных дней, без искусственного заполнения пропусков.
+
+Приложение повторно использует свежие записи из базы. Интервал повторной проверки текущих курсов составляет шесть часов. На этот же срок отмечается успешная загрузка ряда для графика в кэше Django. При сбое источника доступны сохранённые записи с датой публикации и пометкой в интерфейсе. При отсутствии сохранённых точек отображается сообщение. По умолчанию команда обновляет пары с базами USD, EUR и активные избранные пары. Повторный запуск обновляет те же записи за совпадающие даты.
+
+```bash
+python manage.py update_rates
+python manage.py update_rates --base USD --quotes EUR,KZT,RUB
+python manage.py test
+python manage.py makemigrations --check --dry-run
+```
+
+Команда возвращает ненулевой код при неполном обновлении. Успешно полученные курсы при этом сохраняются. На сервере можно запускать команду по расписанию, например через cron каждые шесть часов. В среде планировщика задайте тот же `DATABASE_URL`, что у приложения.
+
+## Развёртывание на Render с PostgreSQL
+
+1. Загрузите исходники в репозиторий и создайте PostgreSQL и Python Web Service на Render. При создании сервиса укажите папку с `manage.py` как корень. Выберите поддерживаемую версию Python 3.11–3.14.
+2. Задайте переменные окружения из таблицы для вашего домена и базы.
+3. Укажите команду сборки `pip install -r requirements.txt && python manage.py collectstatic --noinput`.
+4. Для применения миграций используйте Pre-deploy Command `python manage.py migrate --noinput`, если он доступен на вашем тарифе. Для учебного сервиса с одним экземпляром можно выполнить миграции командой запуска `python manage.py migrate --noinput && gunicorn currencytracker.wsgi:application --bind 0.0.0.0:$PORT`.
+5. При отдельной команде миграции используйте Start Command `gunicorn currencytracker.wsgi:application --bind 0.0.0.0:$PORT`. После запуска проверьте сайт по HTTPS и выполните `python manage.py check --deploy` в окружении сервиса. Для админки выполните `python manage.py createsuperuser` в консоли хостинга или из доверенного окружения, настроенного на эту базу.
+
+| Переменная | Значение при развёртывании |
+| --- | --- |
+| `DJANGO_DEBUG` | `0` |
+| `DJANGO_SECRET_KEY` | Случайный секрет длиной от 50 символов. Можно создать через `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
+| `DJANGO_ALLOWED_HOSTS` | Домен без схемы, например `my-service.onrender.com` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Полный HTTPS-адрес, например `https://my-service.onrender.com` |
+| `DJANGO_TRUST_PROXY` | `1` за доверенным прокси, который устанавливает `X-Forwarded-Proto` |
+| `DATABASE_URL` | Внутренняя строка подключения PostgreSQL из панели Render |
+| `DJANGO_HSTS_SECONDS` | `3600` для начала, `31536000` после проверки HTTPS |
+
+В режиме деплоя включены HTTPS-редирект, безопасные cookies и раздача статики через WhiteNoise. Для смены хранилища задайте `DATABASE_URL` и запустите миграции. Локальные записи и учётные записи переносятся отдельно.
+
+Документация по окружению и хостингу приведена в [памятке по деплою Django](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/) и [руководстве Render](https://render.com/docs/deploy-django).

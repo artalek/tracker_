@@ -1,0 +1,47 @@
+{% load static %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}Обзор{% endblock %} · CurrencyTracker</title>
+  <link rel="stylesheet" href="{% static 'tracker/site.css' %}">
+  <script src="{% static 'tracker/site.js' %}" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main-content">К содержанию</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="{% url 'tracker:home' %}"><span class="brand-mark" aria-hidden="true">↗</span>Currency<span>Tracker</span></a>
+      <nav aria-label="Основная навигация">
+        <a href="{% url 'tracker:home' %}" {% if request.resolver_match.url_name == 'home' %}aria-current="page"{% endif %}>Обзор</a>
+        <a href="{% url 'tracker:rates' %}" {% if request.resolver_match.url_name == 'rates' %}aria-current="page"{% endif %}>Курсы</a>
+        {% if user.is_authenticated %}
+          <a href="{% url 'tracker:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}aria-current="page"{% endif %}>Кабинет</a>
+        {% endif %}
+      </nav>
+      <div class="header-actions">
+        {% if user.is_authenticated %}
+          <form method="post" action="{% url 'tracker:logout' %}">{% csrf_token %}<button class="button outline">Выйти</button></form>
+        {% else %}
+          <a class="header-login" href="{% url 'tracker:login' %}">Войти</a>
+          <a class="button compact" href="{% url 'tracker:register' %}">Регистрация</a>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+  <main class="shell site-main" id="main-content">
+    {% if messages %}
+      <div class="notices" aria-live="polite">
+        {% for message in messages %}<p class="notice {{ message.tags }}">{{ message }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer"><div class="shell footer-inner">
+    <span>CurrencyTracker · Учебный проект</span>
+    <a href="https://frankfurter.dev/">Источник курсов — Frankfurter</a>
+  </div></footer>
+</body>
+</html>
