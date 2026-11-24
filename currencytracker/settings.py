@@ -3,6 +3,7 @@ from pathlib import Path
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
+from django.core.management.utils import get_random_secret_key
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,13 +19,15 @@ def env_list(name, default=""):
 
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or (
-    "django-insecure-currencytracker-local-development-only" if DEBUG else ""
-)
-if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY.startswith("django-insecure-")):
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or (get_random_secret_key() if DEBUG else "")
+if not DEBUG and (
+    len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5 or SECRET_KEY.startswith("django-insecure-")
+):
     raise ImproperlyConfigured("Set DJANGO_SECRET_KEY to a strong production key.")
 
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]")
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]" if DEBUG else "")
+if not DEBUG and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
+    raise ImproperlyConfigured("Set DJANGO_ALLOWED_HOSTS to the site's hostname.")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 PRIVACY_OPERATOR_NAME = os.getenv("PRIVACY_OPERATOR_NAME", "").strip()
 PRIVACY_CONTACT_EMAIL = os.getenv("PRIVACY_CONTACT_EMAIL", "").strip()
@@ -67,7 +70,7 @@ TEMPLATES = [
 
 database_url = os.getenv("DATABASE_URL")
 if not DEBUG and not database_url:
-    raise ImproperlyConfigured("Set DATABASE_URL to a PostgreSQL connection string in production.")
+    raise ImproperlyConfigured("Set DATABASE_URL to an explicit SQLite or PostgreSQL URL in production.")
 DATABASES = {
     "default": dj_database_url.parse(database_url, conn_max_age=60, conn_health_checks=True)
     if database_url
@@ -96,7 +99,9 @@ if not DEBUG:
         "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
     }
     SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
     CSRF_COOKIE_SECURE = True
+    SECURE_REFERRER_POLICY = "same-origin"
     SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_HSTS_SECONDS", "3600"))
     if env_bool("DJANGO_TRUST_PROXY"):
