@@ -40,8 +40,12 @@
     {% block content %}{% endblock %}
   </main>
   <footer class="site-footer"><div class="shell footer-inner">
-    <span>CurrencyTracker · Учебный проект</span>
-    <a href="https://frankfurter.dev/">Источник курсов — Frankfurter</a>
+    <span>© AAC. Все права защищены.</span>
+    <nav aria-label="Информация о сайте">
+      <a href="{% url 'tracker:privacy' %}">Политика конфиденциальности</a>
+      <a href="{% url 'tracker:consent' %}">Согласие на обработку данных</a>
+      <a href="https://frankfurter.dev/">Источник курсов — Frankfurter</a>
+    </nav>
   </div></footer>
 </body>
 </html>

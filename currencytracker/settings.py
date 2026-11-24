@@ -26,6 +26,8 @@ if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY.startswith("django-insecure
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+PRIVACY_OPERATOR_NAME = os.getenv("PRIVACY_OPERATOR_NAME", "").strip()
+PRIVACY_CONTACT_EMAIL = os.getenv("PRIVACY_CONTACT_EMAIL", "").strip()
 
 INSTALLED_APPS = [
     "django.contrib.admin",

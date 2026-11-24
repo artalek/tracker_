@@ -1,3 +1,4 @@
+from base64 import b64decode
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
@@ -96,7 +97,8 @@ class TrackerTests(TestCase):
     def test_list_rates_distinguishes_missing_pairs(self, get):
         get.return_value = mock_response(rows=[observation()])
         response = self.client.get(reverse("tracker:rates"), {"base": "USD"})
-        self.assertContains(response, "0,925123456789")
+        self.assertContains(response, "0,925123")
+        self.assertNotContains(response, "0,9251234")
         self.assertContains(response, "Недоступен")
         self.assertContains(response, "График")
         self.assertEqual(get.call_args.kwargs["params"]["base"], "USD")
@@ -123,17 +125,53 @@ class TrackerTests(TestCase):
         self.assertEqual(self.client.get(url, {**params, "days": 700}).status_code, 400)
 
     @patch("tracker.services.requests.get")
+    def test_interactive_chart_uses_exact_observation_dates_and_at_most_three_decimals(self, get):
+        get.return_value = mock_response(rows=[
+            observation(days_ago=3, rate="0.90123"),
+            observation(rate="0.912345"),
+        ])
+        response = self.client.get(reverse("tracker:chart"), {
+            "base": "USD", "target": "EUR", "days": 7, "format": "interactive",
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(b64decode(data["image"]).startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(len(data["points"]), 2)
+        first, last = data["points"]
+        self.assertEqual(last["date"], timezone.localdate().strftime("%d.%m.%Y"))
+        self.assertEqual(last["rate"], "0,912")
+        self.assertEqual(first["rate"], "0,901")
+        self.assertLess(first["x"], last["x"])
+        self.assertGreater(first["y"], last["y"])
+        for point in data["points"]:
+            self.assertLessEqual(data["bounds"]["left"], point["x"])
+            self.assertLessEqual(point["x"], data["bounds"]["right"])
+            self.assertLessEqual(data["bounds"]["top"], point["y"])
+            self.assertLessEqual(point["y"], data["bounds"]["bottom"])
+        get.assert_called_once()
+
+    @override_settings(PRIVACY_OPERATOR_NAME="Пример оператора", PRIVACY_CONTACT_EMAIL="contact@example.com")
+    def test_legal_pages_are_public_and_linked_from_registration(self):
+        for name in ("privacy", "consent"):
+            url = reverse(f"tracker:{name}")
+            response = self.client.get(url)
+            self.assertContains(response, "Пример оператора")
+            self.assertContains(response, 'href="mailto:contact@example.com"')
+            self.assertContains(response, "© AAC. Все права защищены.")
+            self.assertContains(self.client.get(reverse("tracker:register")), f'href="{url}"')
+
+    @patch("tracker.services.requests.get")
     def test_conversion_prg_guest_and_history_owner(self, get):
         get.return_value = mock_response(rows=[observation(rate="0.925")])
         url = reverse("tracker:home")
         data = {"amount": "12,50", "base": "USD", "target": "EUR"}
         guest = self.client.post(url, data, follow=True)
-        self.assertContains(guest, "11,5625")
+        self.assertContains(guest, "11,563")
         self.assertFalse(Conversion.objects.exists())
 
         self.client.force_login(self.owner)
         response = self.client.post(url, data, follow=True)
-        self.assertContains(response, "11,5625")
+        self.assertContains(response, "11,563")
         operation = Conversion.objects.get(user=self.owner)
         self.assertEqual(operation.amount, Decimal("12.50"))
         self.assertEqual(operation.result, Decimal("11.562500"))
@@ -141,10 +179,10 @@ class TrackerTests(TestCase):
         self.client.get(response.redirect_chain[-1][0])
         self.assertEqual(Conversion.objects.count(), 1)
         account = reverse("tracker:dashboard")
-        self.assertContains(self.client.get(account), "11,5625")
+        self.assertContains(self.client.get(account), "11,563")
         self.client.force_login(self.other)
         own_page = self.client.get(account)
-        self.assertNotContains(own_page, "11,5625")
+        self.assertNotContains(own_page, "11,563")
         self.assertIn("no-store", own_page["Cache-Control"])
 
     @patch("tracker.services.requests.get")

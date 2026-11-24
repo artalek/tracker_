@@ -1,12 +1,15 @@
+from base64 import b64encode
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.template.defaultfilters import floatformat
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -92,12 +95,32 @@ def chart_image(request):
 
     from .charts import render_chart
 
-    response = HttpResponse(render_chart(points), content_type="image/png")
+    chart_result = render_chart(points)
+    if request.GET.get("format") == "interactive":
+        response = JsonResponse({
+            "image": b64encode(chart_result.png).decode("ascii"),
+            "bounds": chart_result.bounds,
+            "points": [
+                {"x": x, "y": y, "date": day.strftime("%d.%m.%Y"), "rate": floatformat(rate, "3")}
+                for (day, rate), (x, y) in zip(points, chart_result.coordinates, strict=True)
+            ],
+            "stale": stale,
+        })
+    else:
+        response = HttpResponse(chart_result.png, content_type="image/png")
     response["X-Rate-Points"] = str(len(points))
     response["X-Rate-Last-Date"] = points[-1][0].isoformat()
     response["X-Rate-Stale"] = "1" if stale else "0"
     response["Cache-Control"] = "no-store" if stale else "public, max-age=900"
     return response
+
+
+@require_GET
+def legal_page(request, template_name):
+    return render(request, template_name, {
+        "operator": settings.PRIVACY_OPERATOR_NAME,
+        "contact": settings.PRIVACY_CONTACT_EMAIL,
+    })
 
 
 @require_GET

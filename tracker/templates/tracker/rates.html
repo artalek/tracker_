@@ -1,4 +1,5 @@
 {% extends "tracker/base.html" %}
+{% load tracker_numbers %}
 {% block title %}Курсы валют{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Курсы валют</h1><p>Справочные значения за одну единицу базовой валюты.</p></div></div>
@@ -21,7 +22,7 @@
           <tr>
             <td><strong>{{ currency.code }}</strong> <span class="muted">{{ currency.name }}</span></td>
             {% if snapshot %}
-              <td class="numeric">{{ snapshot.rate|floatformat:"-12" }}</td>
+              <td class="numeric">{{ snapshot.rate|rate_digits }}</td>
               <td>{{ snapshot.date|date:"d.m.Y" }}{% if snapshot.stale %}<br><small class="muted">Сохранённый курс</small>{% endif %}</td>
             {% else %}
               <td class="muted">Недоступен</td><td>—</td>

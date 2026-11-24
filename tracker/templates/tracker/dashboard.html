@@ -29,9 +29,9 @@
         {% for item in history %}
           <tr>
             <td>{{ item.created_at|date:"d.m.Y H:i" }}</td>
-            <td class="numeric">{{ item.amount|floatformat:"-6" }} {{ item.base_currency.code }}</td>
-            <td class="numeric">{{ item.result|floatformat:"-6" }} {{ item.target_currency.code }}</td>
-            <td class="numeric">{{ item.rate|floatformat:"-12" }} <small class="muted">· {{ item.rate_date|date:"d.m.Y" }}</small></td>
+            <td class="numeric">{{ item.amount|floatformat:"3" }} {{ item.base_currency.code }}</td>
+            <td class="numeric">{{ item.result|floatformat:"3" }} {{ item.target_currency.code }}</td>
+            <td class="numeric">{{ item.rate|floatformat:"3" }} <small class="muted">· {{ item.rate_date|date:"d.m.Y" }}</small></td>
           </tr>
         {% empty %}
           <tr><td colspan="4" class="muted">Здесь появятся ваши конвертации после первого расчёта.</td></tr>

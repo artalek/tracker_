@@ -27,11 +27,11 @@
     <div class="conversion-output" aria-live="polite">
       <span class="muted">Результат</span>
       {% if result %}
-        <strong>{{ result.result|floatformat:"-6" }} <small>{{ result.target }}</small></strong>
+        <strong>{{ result.result|floatformat:"3" }} <small>{{ result.target }}</small></strong>
         {% if result.base == result.target %}
           <p>Курс 1 для одинаковых валют</p>
         {% else %}
-          <p>1 {{ result.base }} = {{ result.rate|floatformat:"-12" }} {{ result.target }}<br>
+          <p>1 {{ result.base }} = {{ result.rate|floatformat:"3" }} {{ result.target }}<br>
           Курс за {{ result.date|date:"d.m.Y" }}{% if result.stale %} · сохранённый{% endif %}</p>
         {% endif %}
       {% else %}
@@ -55,9 +55,17 @@
     </form>
     {% if chart %}
       {% url 'tracker:chart' as chart_url %}
-      <div class="chart-frame" data-chart="{{ chart_url }}?base={{ chart.base.code }}&amp;target={{ chart.target.code }}&amp;days={{ chart.days }}">
+      <div class="chart-frame" data-chart="{{ chart_url }}?base={{ chart.base.code }}&amp;target={{ chart.target.code }}&amp;days={{ chart.days }}&amp;format=interactive" data-quote="{{ chart.target.code }}">
         <p class="chart-state" data-chart-state>Загружаем историю…</p>
-        <img data-chart-image hidden alt="Динамика курса {{ chart.base.code }} к {{ chart.target.code }}">
+        <div class="interactive-chart" tabindex="0" role="group" aria-label="График {{ chart.base.code }} к {{ chart.target.code }}. Выбирайте точки клавишами влево и вправо." data-chart-plot hidden>
+          <img data-chart-image alt="Динамика курса {{ chart.base.code }} к {{ chart.target.code }}">
+          <div class="chart-crosshair" data-chart-crosshair hidden aria-hidden="true"></div>
+          <div class="chart-marker" data-chart-marker hidden aria-hidden="true"></div>
+          <div class="chart-tooltip" data-chart-tooltip hidden aria-hidden="true">
+            <strong data-chart-rate></strong><time data-chart-date></time>
+          </div>
+          <span class="sr-only" role="status" data-chart-announcement></span>
+        </div>
         <noscript>
           <style>[data-chart-state]{display:none}</style>
           <img src="{{ chart_url }}?base={{ chart.base.code }}&amp;target={{ chart.target.code }}&amp;days={{ chart.days }}" alt="Динамика курса {{ chart.base.code }} к {{ chart.target.code }}">
@@ -88,7 +96,7 @@
         <span class="currency-icon" aria-hidden="true">{{ currency.symbol|default:currency.code }}</span>
         <div class="market-name"><strong>USD / {{ currency.code }}</strong><span>{{ currency.name }}</span></div>
         <div class="market-value">
-          {% if snapshot %}<strong>{{ snapshot.rate|floatformat:"-6" }}</strong>
+          {% if snapshot %}<strong>{{ snapshot.rate|floatformat:"3" }}</strong>
           <span>{{ snapshot.date|date:"d.m.Y" }}{% if snapshot.stale %} · сохранён{% endif %}</span>
           {% else %}<strong>—</strong><span>Нет данных</span>{% endif %}
         </div>
