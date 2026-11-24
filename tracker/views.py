@@ -1,4 +1,3 @@
-from base64 import b64encode
 from datetime import date
 from decimal import Decimal
 
@@ -7,9 +6,8 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
-from django.template.defaultfilters import floatformat
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -22,97 +20,67 @@ DEFAULT_PAIR = {"base": "USD", "target": "EUR", "days": 30}
 POPULAR_QUOTES = ("EUR", "GBP", "RUB", "KZT")
 
 
-def chart_data(form):
-    return form.cleaned_data if form.is_valid() else None
+def conversion_result_from_session(request):
+    result = request.session.pop("conversion_result", None)
+    if result is not None:
+        for key in ("amount", "result", "rate"):
+            result[key] = Decimal(result[key])
+        result["date"] = date.fromisoformat(result["date"])
+    return result
+
+
+def submit_conversion(request, form, days):
+    base = form.cleaned_data["base"]
+    target = form.cleaned_data["target"]
+    try:
+        result = CurrencyConverter().convert(form.cleaned_data["amount"], base, target, user=request.user)
+    except RateError as exc:
+        form.add_error(None, str(exc))
+        return None
+
+    request.session["conversion_result"] = {
+        "base": base.code, "target": target.code, "amount": str(result.amount),
+        "result": str(result.result), "rate": str(result.rate),
+        "date": result.rate_date.isoformat(), "stale": result.stale,
+    }
+    if base == target:
+        return redirect("tracker:home")
+    return redirect(
+        f"{reverse('tracker:home')}?base={base.code}&target={target.code}&days={days}",
+    )
+
+
+def overview_rates():
+    currencies = Currency.objects.filter(is_active=True).in_bulk(
+        ("USD", *POPULAR_QUOTES), field_name="code",
+    )
+    quotes = [currencies[code] for code in POPULAR_QUOTES if code in currencies]
+    latest = RateService().latest(currencies["USD"], quotes) if "USD" in currencies else {}
+    return [(quote, latest.get(quote.code)) for quote in quotes]
 
 
 @never_cache
 @require_http_methods(["GET", "POST"])
 def home(request):
     chart_form = ChartForm({**DEFAULT_PAIR, **request.GET.dict()}, auto_id="chart_%s")
-    chart = chart_data(chart_form)
-    saved = request.session.pop("conversion_result", None) if request.method == "GET" else None
+    chart = chart_form.cleaned_data if chart_form.is_valid() else None
+    result = conversion_result_from_session(request) if request.method == "GET" else None
     initial = {"amount": Decimal("100"), "base": "USD", "target": "EUR"}
     if chart:
         initial.update(base=chart["base"].code, target=chart["target"].code)
-    if saved is not None:
-        initial.update(amount=Decimal(saved["amount"]), base=saved["base"], target=saved["target"])
+    if result is not None:
+        initial.update(amount=result["amount"], base=result["base"], target=result["target"])
     form = ConversionForm(request.POST if request.method == "POST" else None, initial=initial)
 
     if request.method == "POST" and form.is_valid():
-        base, target, amount = (form.cleaned_data[key] for key in ("base", "target", "amount"))
-        try:
-            result = CurrencyConverter().convert(amount, base, target)
-        except RateError as exc:
-            form.add_error(None, str(exc))
-        else:
-            if request.user.is_authenticated:
-                Conversion.objects.create(
-                    user=request.user, base_currency=base, target_currency=target,
-                    amount=result.amount, result=result.result, rate=result.rate, rate_date=result.rate_date,
-                )
-            request.session["conversion_result"] = {
-                "base": base.code, "target": target.code, "amount": str(result.amount),
-                "result": str(result.result), "rate": str(result.rate),
-                "date": result.rate_date.isoformat(), "stale": result.stale,
-            }
-            if base != target:
-                days = chart["days"] if chart else DEFAULT_PAIR["days"]
-                return redirect(
-                    f"{reverse('tracker:home')}?base={base.code}&target={target.code}&days={days}",
-                )
-            return redirect("tracker:home")
+        response = submit_conversion(request, form, chart["days"] if chart else DEFAULT_PAIR["days"])
+        if response is not None:
+            return response
 
-    if saved:
-        for key in ("amount", "result", "rate"):
-            saved[key] = Decimal(saved[key])
-        saved["date"] = date.fromisoformat(saved["date"])
-
-    currencies = Currency.objects.filter(is_active=True).in_bulk(
-        ("USD", *POPULAR_QUOTES), field_name="code",
-    )
-    quotes = [currencies[code] for code in POPULAR_QUOTES if code in currencies]
-    latest = RateService().latest(currencies["USD"], quotes) if "USD" in currencies else {}
     return render(request, "tracker/home.html", {
-        "form": form, "result": saved, "chart_form": chart_form, "chart": chart,
-        "cards": [(quote, latest.get(quote.code)) for quote in quotes],
+        "form": form, "result": result, "chart_form": chart_form, "chart": chart,
+        "cards": overview_rates(),
     })
-
-
-@require_GET
-def chart_image(request):
-    form = ChartForm(request.GET)
-    chart = chart_data(form)
-    if chart is None:
-        return JsonResponse({"error": "Проверьте валютную пару и период."}, status=400)
-
-    points, stale = RateService().history(chart["base"], chart["target"], chart["days"])
-    if not points:
-        return JsonResponse(
-            {"error": "За выбранный период курсы недоступны. Попробуйте позже или измените период."},
-            status=503 if stale else 404,
-        )
-
-    from .charts import render_chart
-
-    chart_result = render_chart(tuple(points))
-    if request.GET.get("format") == "interactive":
-        response = JsonResponse({
-            "image": b64encode(chart_result.png).decode("ascii"),
-            "bounds": chart_result.bounds,
-            "points": [
-                {"x": x, "y": y, "date": day.strftime("%d.%m.%Y"), "rate": floatformat(rate, "3")}
-                for (day, rate), (x, y) in zip(points, chart_result.coordinates, strict=True)
-            ],
-            "stale": stale,
-        })
-    else:
-        response = HttpResponse(chart_result.png, content_type="image/png")
-    response["X-Rate-Points"] = str(len(points))
-    response["X-Rate-Last-Date"] = points[-1][0].isoformat()
-    response["X-Rate-Stale"] = "1" if stale else "0"
-    response["Cache-Control"] = "no-store" if stale else "public, max-age=900"
-    return response
 
 
 @require_GET

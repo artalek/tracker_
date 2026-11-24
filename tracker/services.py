@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 
-from .models import ExchangeRate
+from .models import Conversion, ExchangeRate
 
 logger = logging.getLogger(__name__)
 RATE_STEP = Decimal("0.000000000001")
@@ -170,7 +170,7 @@ class CurrencyConverter:
     def __init__(self, rates=None):
         self.rates = rates if rates is not None else RateService()
 
-    def convert(self, amount, base, target):
+    def convert(self, amount, base, target, *, user=None):
         if base.pk == target.pk:
             snapshot = RateSnapshot(Decimal(1), timezone.localdate())
         else:
@@ -180,4 +180,9 @@ class CurrencyConverter:
         with localcontext() as context:
             context.prec = 45
             result = (amount * snapshot.rate).quantize(RESULT_STEP, rounding=ROUND_HALF_UP)
+        if user is not None and user.is_authenticated:
+            Conversion.objects.create(
+                user=user, base_currency=base, target_currency=target,
+                amount=amount, result=result, rate=snapshot.rate, rate_date=snapshot.date,
+            )
         return ConversionResult(amount, result, snapshot.rate, snapshot.date, snapshot.stale)

@@ -2,12 +2,13 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from . import views
+from .chart_views import chart_image
 
 app_name = "tracker"
 urlpatterns = [
     path("", views.home, name="home"),
     path("rates/", views.rates, name="rates"),
-    path("chart.png", views.chart_image, name="chart"),
+    path("chart.png", chart_image, name="chart"),
     path("privacy/", views.legal_page, {"template_name": "tracker/privacy.html"}, name="privacy"),
     path("consent/", views.legal_page, {"template_name": "tracker/consent.html"}, name="consent"),
     path("account/", views.dashboard, name="dashboard"),
