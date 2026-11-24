@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 RATE_STEP = Decimal("0.000000000001")
 RESULT_STEP = Decimal("0.000001")
 REFRESH_INTERVAL = timedelta(hours=6)
+RETRY_DELAY_SECONDS = 60
 
 
 class RateError(Exception):
@@ -51,13 +52,14 @@ class FrankfurterClient:
             if not isinstance(payload, list):
                 raise ValueError("expected a list of rates")
             points = {}
+            today = timezone.localdate()
             for row in payload:
                 quote = row["quote"]
                 day = date.fromisoformat(row["date"])
                 rate = Decimal(str(row["rate"]))
                 if (
                     row["base"] != base or quote not in quotes
-                    or day > timezone.localdate()
+                    or day > today
                     or (start is not None and not start <= day <= end)
                     or not rate.is_finite() or not 0 < rate < Decimal("1e11")
                 ):
@@ -106,16 +108,24 @@ class RateService:
             if force or code not in saved
             or not saved[code].latest_checked_at or saved[code].latest_checked_at < cutoff
         ]
+        retry_keys = {code: f"tracker:latest-retry:{base.code}:{code}" for code in pending}
+        retry_later = cache.get_many(retry_keys.values()) if retry_keys and not force else {}
+        requested = [code for code in pending if retry_keys[code] not in retry_later]
         downloaded = {}
-        if pending:
+        if requested:
             try:
-                points = self.client.rates(base.code, pending)
+                points = self.client.rates(base.code, requested)
                 self._save(base, targets, points, latest=True)
                 downloaded = {point.quote: point for point in points}
             except RateError as exc:
                 if force:
                     raise
                 logger.warning("Не удалось обновить курсы %s: %s", base.code, exc)
+            missing = {retry_keys[code]: True for code in requested if code not in downloaded}
+            if missing:
+                cache.set_many(missing, timeout=RETRY_DELAY_SECONDS)
+            if force and downloaded:
+                cache.delete_many([retry_keys[code] for code in downloaded])
         snapshots = {}
         for code, row in saved.items():
             snapshots[code] = RateSnapshot(row.rate, row.date, code in pending)
@@ -131,18 +141,20 @@ class RateService:
         rows = ExchangeRate.objects.filter(
             base_currency=base, target_currency=target, date__range=(start, end),
         ).order_by("date")
-        stale = False
-        if cache.get(key) is None:
+        refreshed = cache.get(key)
+        if refreshed is None:
             try:
                 points = self.client.rates(base.code, [target.code], start=start, end=end)
                 if not points:
                     raise RateError("За этот период нет опубликованных курсов.")
                 self._save(base, {target.code: target}, points)
                 cache.set(key, True, timeout=int(REFRESH_INTERVAL.total_seconds()))
+                refreshed = True
             except RateError as exc:
                 logger.warning("Не удалось обновить историю %s/%s: %s", base.code, target.code, exc)
-                stale = True
-        return list(rows.values_list("date", "rate")), stale
+                cache.set(key, False, timeout=RETRY_DELAY_SECONDS)
+                refreshed = False
+        return list(rows.values_list("date", "rate")), not refreshed
 
 
 @dataclass(frozen=True)

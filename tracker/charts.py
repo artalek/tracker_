@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import lru_cache
 from io import BytesIO
 from math import floor, log10
 from threading import Lock
@@ -23,6 +24,7 @@ class RenderedChart:
     bounds: dict[str, float]
 
 
+@lru_cache(maxsize=16)
 def render_chart(points):
     dates, values = zip(*points)
     rates = [float(value) for value in values]

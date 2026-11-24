@@ -95,7 +95,7 @@ def chart_image(request):
 
     from .charts import render_chart
 
-    chart_result = render_chart(points)
+    chart_result = render_chart(tuple(points))
     if request.GET.get("format") == "interactive":
         response = JsonResponse({
             "image": b64encode(chart_result.png).decode("ascii"),

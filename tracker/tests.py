@@ -92,6 +92,8 @@ class TrackerTests(TestCase):
         self.assertTrue(result.stale)
         self.assertEqual(result.rate, first.rate)
         self.assertEqual(result.date, first.date)
+        self.assertTrue(service.latest(self.usd, [self.eur])["EUR"].stale)
+        self.assertEqual(get.call_count, 2)
 
     @patch("tracker.services.requests.get")
     def test_list_rates_distinguishes_missing_pairs(self, get):
@@ -121,6 +123,8 @@ class TrackerTests(TestCase):
         response = self.client.get(url, params)
         self.assertEqual(response["X-Rate-Stale"], "1")
         self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(self.client.get(url, params)["X-Rate-Stale"], "1")
+        self.assertEqual(get.call_count, 2)
         self.assertEqual(self.client.get(url, {**params, "target": "JPY"}).status_code, 503)
         self.assertEqual(self.client.get(url, {**params, "days": 700}).status_code, 400)
 
